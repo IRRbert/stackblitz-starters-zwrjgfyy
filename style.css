@@ -1,0 +1,50 @@
+/* Verhindert Scrollbalken */
+html, body {
+    
+    overflow: hidden;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+}
+
+
+/* Renderer Canvas soll das gesamte Fenster einnehmen */
+canvas {
+    display: block; /* Verhindert zusätzliche Scrollbalken durch Inline-Elemente */
+}
+
+body, 
+button,
+input,
+select {
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+}
+
+/* Player styles */
+.slider-description {
+    font-size: 10px;
+    color: #666;
+    margin-top: 2px;
+}
+
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+
+/*  ---- Meine eigenen Klassen  ----- */
+.invertiert {
+    filter: invert(100%);
+}
+
+.no-select {
+    -webkit-user-select: none;
+    /* Safari */
+    -ms-user-select: none;
+    /* Internet Explorer/Edge */
+    user-select: none;
+    /* Standard */
+}

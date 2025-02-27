@@ -1,0 +1,19 @@
+.LOG
+
+09:37 25.02.2025
+!!!!!!!!!!!!!!!!!!! Player einbauen! Stop / Step, Turbo, Langsam,
+
+09:45 25.02.2025
+Idee Bremse: 
+Bremse 0 = 0 Bild wird eingefügt zwie´schen 2 Zeitschritten. 
+Bremse 1 = 1 Bild wird eingefügt zwie´schen 2 Zeitschritten. 
+Bremse 4 = 4 Bilder wird eingefügt zwie´schen 2 Zeitschritten. 
+…
+
+
+Idee Turbo: 
+Turbo 0 = 0 Bild wird ausgelassen beim Zeichnen. 
+Turbo 1 = 1 Bild wird ausgelassen beim Zeichnen. = 2fach
+Turbo 2 = 2 Bilder werden ausgelassen beim Zeichnen. = 3fach
+...
+
