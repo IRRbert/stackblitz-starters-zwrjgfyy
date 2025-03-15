@@ -5,22 +5,20 @@ class classPlayer {
     constructor() {
         this.titel = "Player";
         this.isPlaying = true;
-        this.speed = 1; // Normal speed
-        this.brake = 0; // No braking
-        this.turbo = 0; // No turbo
-        this.lastFrameTime = 0;
-        this.frameDelay = 0;
-        this.frameSkip = 0;
+        this.lastFrameTime = performance.now();
+        this.minFrameTime = 100; // Fixed time step (10fps for more consistent updates)
         
         // Create the player window immediately but hide it
         this.createPlayerWindow();
-        this.playerWindow.hide();
         
         // Register to menu
         MENU.register_to_MENU({
             MENU_Name: this.titel,
             MENU_Klick: this.MENU_Klick.bind(this)
         });
+
+        // Start animation loop
+        this.animate();
     }
     
     createPlayerWindow() {
@@ -35,23 +33,8 @@ class classPlayer {
                 </fieldset>
                 
                 <fieldset>
-                    <legend>Geschwindigkeit</legend>
-                    <div>
-                        <label>Bremse: <span id="brakeValue">0</span></label><br>
-                        <input type="range" id="brakeSlider" min="0" max="10" value="0">
-                        <div class="slider-description">Bilder zwischen Zeitschritten</div>
-                    </div>
-                    
-                    <div style="margin-top: 10px;">
-                        <label>Turbo: <span id="turboValue">0</span></label><br>
-                        <input type="range" id="turboSlider" min="0" max="10" value="0">
-                        <div class="slider-description">Bilder überspringen</div>
-                    </div>
-                </fieldset>
-                
-                <fieldset>
-                    <legend>Aktualisierungsintervall</legend>
-                    <div id="updateIntervalDisplay">10 ms</div>
+                    <legend>Zeitschritt</legend>
+                    <div id="timeStepDisplay">0</div>
                 </fieldset>
             </form>
         `;
@@ -66,66 +49,64 @@ class classPlayer {
             height: windowHeight + 'px',
             html: htmlContent,
             class: ["no-max", "no-close", "no-full"],
-            x: "center",
-            y: "center",
+            x: "0",
+            y: "bottom",
             oncreate: () => {
                 // Play/Pause button
                 document.getElementById('playPauseButton').addEventListener('click', () => {
                     this.isPlaying = !this.isPlaying;
                     document.getElementById('playPauseButton').textContent = this.isPlaying ? '⏸️ Pause' : '▶️ Play';
                     document.getElementById('stepButton').disabled = this.isPlaying;
+                    this.updateTimeStepDisplay();
                 });
                 
                 // Step button
                 document.getElementById('stepButton').addEventListener('click', () => {
                     if (!this.isPlaying && window.SIMULATION) {
-                        window.SIMULATION.performSimulationStep();
+                        this.performStep();
                     }
                 });
-                
-                // Brake slider
-                document.getElementById('brakeSlider').addEventListener('input', (e) => {
-                    this.brake = parseInt(e.target.value);
-                    document.getElementById('brakeValue').textContent = this.brake;
-                    this.updateSimulationSpeed();
-                });
-                
-                // Turbo slider
-                document.getElementById('turboSlider').addEventListener('input', (e) => {
-                    this.turbo = parseInt(e.target.value);
-                    document.getElementById('turboValue').textContent = this.turbo;
-                    this.updateSimulationSpeed();
-                });
-                
-                this.updateSimulationSpeed();
-            },
-            onclose: () => {
-                // Hide instead of destroying
-                this.playerWindow.hide();
             }
         });
     }
     
-    updateSimulationSpeed() {
-        if (window.SIMULATION) {
-            // Calculate the new update interval based on brake and turbo
-            // Base interval is 10ms
-            const baseInterval = 10;
+    updateTimeStepDisplay() {
+        const timeStepElement = document.getElementById('timeStepDisplay');
+        if (!timeStepElement || !window.SIMULATION) return;
+        timeStepElement.textContent = window.SIMULATION.stepCounter;
+    }
+    
+    async performStep() {
+        if (!window.SIMULATION) return;
+
+        // Perform simulation step
+        await window.SIMULATION.performSimulationStep();
+        window.SIMULATION.updateFishAndSharkMatrices();
+        this.updateTimeStepDisplay();
+    }
+
+    animate() {
+        requestAnimationFrame(() => this.animate());
+        
+        if (meine_szene) {
+            meine_szene.controls.update();
             
-            // Brake adds delay between steps
-            this.frameDelay = this.brake * 100; // Each brake level adds 100ms
+            if (meine_szene.camera.position.y < 0) {
+                meine_szene.groundMaterial.opacity = 0.6;
+            } else {
+                meine_szene.groundMaterial.opacity = 1;
+            }
             
-            // Turbo skips frames
-            this.frameSkip = this.turbo;
-            
-            // Update the simulation's update interval
-            window.SIMULATION.updateInterval = baseInterval + this.frameDelay;
-            window.SIMULATION.frameSkip = this.frameSkip;
-            
-            // Update the display
-            document.getElementById('updateIntervalDisplay').textContent = 
-                `${window.SIMULATION.updateInterval} ms` + 
-                (this.frameSkip > 0 ? `, ${this.frameSkip + 1}x speed` : '');
+            meine_szene.renderer.render(meine_szene.scene, meine_szene.camera);
+        }
+
+        // Handle simulation update with fixed time step
+        const now = performance.now();
+        const deltaTime = now - this.lastFrameTime;
+        
+        if (this.isPlaying && deltaTime >= this.minFrameTime) {
+            this.performStep();
+            this.lastFrameTime = now;
         }
     }
     
@@ -133,12 +114,10 @@ class classPlayer {
         if (this.playerWindow) {
             if (this.playerWindow.hidden) {
                 this.playerWindow.show();
+                this.playerWindow.focus();
             } else {
                 this.playerWindow.hide();
             }
         }
     }
 }
-
-// Create the player instance
-window.PLAYER = new classPlayer();

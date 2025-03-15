@@ -21,16 +21,47 @@
 <script src="x_irr_funktionen.js"></script>
 
 <script src="classMENU.js"></script>
+<script src="classWesen.js"></script>
+<script src="classWesen-Fisch.js"></script>
+<script src="classWesen-Hai.js"></script>
 <script src="classSimulation_ui.js"></script>
 <script src="classSimulation.js"></script>
 <script src="classSzene-Wiese.js"></script>
+<script src="classStatistik.js"></script>
 <script>
     // Create SimulationEinstellungen first
     window.SimulationEinstellungen = new classSimulation_ui();
     // Then create scene which will use SimulationEinstellungen
     window.meine_szene = new classSzene();
-    // Start animation
-    meine_szene.animate();
+    // Create statistics instance
+    window.STATISTIK = new classStatistik();
+    
+    // Auto-start simulation with default settings
+    window.addEventListener('load', () => {
+        const config = {
+            dimensions: SimulationEinstellungen.dimensions,
+            neighbors: SimulationEinstellungen.neighbors,
+            world_edge: SimulationEinstellungen.world_edge,
+            fish: SimulationEinstellungen.fish,
+            shark: SimulationEinstellungen.shark
+        };
+        
+        window.SIMULATION = new classSimulation(config);
+        
+        // Create Player - animation will start automatically
+        window.PLAYER = new classPlayer();
+        
+        // Set simulation to pause mode after initialization
+        window.PLAYER.isPlaying = false;
+        const playPauseButton = document.getElementById('playPauseButton');
+        if (playPauseButton) {
+            playPauseButton.textContent = '▶️ Play';
+        }
+        const stepButton = document.getElementById('stepButton');
+        if (stepButton) {
+            stepButton.disabled = false;
+        }
+    });
 </script>
 <script src="classSprache.js"></script>
 <script src="classPlayer.js"></script>

@@ -10,10 +10,10 @@ class classMENU {
         this.MENU_Window = new WinBox({
             title: 'MENU',
             x: 'right',     // Position: right side of the screen
-            y: 40,           // Position: top of the screen
-            width: '300px',
-            height: '200px',
-            class: ['no-max', 'no-close', 'no-resize', 'no-full'],
+            y: '0',         // Position: top of the screen
+            width: '100px',
+            height: '100px',
+            class: ['no-max', 'no-close', 'no-resize', 'no-full' ],
             html: '', // Initialer Inhalt ist leer, wird durch update_MENU() gefüllt
             onclose: () => {
                 // Hide instead of destroying

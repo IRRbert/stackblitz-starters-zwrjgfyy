@@ -1,10 +1,10 @@
 class classSimulation_ui {
     constructor() {
-        // Initialize the dimensions
+        // Initialize the dimensions with smaller default values
         this.dimensions = {
-            x: 100,
-            y: 100,
-            z: 100
+            x: 20,
+            y: 20,
+            z: 20
         };
 
         // Initialize the standard values
@@ -22,14 +22,16 @@ class classSimulation_ui {
         };
         
         this.shark = {
-            count: 100,
+            count: 10,
             birth: 50,
-            starve: 110
+            starve: 70
         };
 
-        // Create WinBox immediately but hide it
+        // Load default settings if they exist
+        this.loadDefaultSettings();
+
+        // Create WinBox immediately and keep it visible
         this.createWatorBox();
-        this.WatorBox.hide();
 
         // Register to menu
         MENU.register_to_MENU({
@@ -40,6 +42,37 @@ class classSimulation_ui {
         window.addEventListener('resize', () => {
             this.centerWatorBox();
         });
+    }
+
+    loadDefaultSettings() {
+        fetch('simulation/default.json')
+            .then(response => response.json())
+            .then(settings => {
+                // Apply settings
+                if (settings.dimensions) {
+                    this.dimensions = settings.dimensions;
+                }
+                if (settings.world_edge) {
+                    this.world_edge = settings.world_edge;
+                }
+                if (settings.neighbors) {
+                    this.neighbors = settings.neighbors;
+                }
+                if (settings.fish) {
+                    this.fish = settings.fish;
+                }
+                if (settings.shark) {
+                    this.shark = settings.shark;
+                }
+
+                // Update UI if WatorBox exists
+                if (this.WatorBox) {
+                    this.updateSettingsUI();
+                }
+            })
+            .catch(error => {
+                console.warn('Could not load default settings:', error);
+            });
     }
 
     createWatorBox() {
@@ -96,6 +129,14 @@ class classSimulation_ui {
 
         htmlContent += `<div style="text-align: center;"><button type="button" id="startRestartButton">Start / Restart</button></div>`;
 
+        htmlContent += `<fieldset>
+            <legend>Einstellungen</legend>
+            <div style="text-align: center;">
+                <button type="button" id="saveWatorSettingsBtn">Speichern</button>
+                <button type="button" id="loadWatorSettingsBtn">Laden</button>
+            </div>
+        </fieldset>`;
+
         htmlContent += `</form>`;
 
         const { width: contentWidth, height: contentHeight } = measureContentSize(htmlContent);
@@ -108,15 +149,30 @@ class classSimulation_ui {
             height: windowHeight + 'px',
             html: htmlContent,
             class: ['no-max', 'no-full', "no-close"],
-            x: 'center',
-            y: 'center',
+            x: '0',
+            y: '0',
             oncreate: () => {
+                setTimeout(() => {
+                    if (this.WatorBox && this.WatorBox.dom) {
+                        const titleBar = this.WatorBox.dom.querySelector('.wb-title');
+                        if (titleBar) {
+                            const closeBtn = document.createElement('span');
+                            closeBtn.innerHTML = '×';
+                            closeBtn.className = 'custom-close-btn';
+                            closeBtn.style.cssText = 'position: absolute; right: 10px; top: 0; cursor: pointer; font-size: 20px;';
+                            closeBtn.addEventListener('click', () => {
+                                this.WatorBox.hide();
+                            });
+                            titleBar.appendChild(closeBtn);
+                        }
+                    }
+                }, 100);
+                
                 const dimensionButton = document.getElementById('dimensionButton');
                 if (dimensionButton) {
                     dimensionButton.addEventListener('click', this.openDimensionWindow.bind(this));
                 }
 
-                // Event-Listener für die Nachbarn-Checkboxen
                 document.getElementById('neighbor-sides').addEventListener('change', (e) => {
                     this.neighbors.sides = e.target.checked;
                 });
@@ -127,12 +183,10 @@ class classSimulation_ui {
                     this.neighbors.corners = e.target.checked;
                 });
 
-                // Event-Listener für die Weltgrenzen
                 document.getElementById('world_edge').addEventListener('change', (e) => {
                     this.world_edge = e.target.value;
                 });
 
-                // Event-Listener für Fische
                 document.getElementById('fish_count').addEventListener('change', (e) => {
                     this.fish.count = parseInt(e.target.value);
                 });
@@ -140,7 +194,6 @@ class classSimulation_ui {
                     this.fish.birth = parseInt(e.target.value);
                 });
 
-                // Event-Listener für Haie
                 document.getElementById('shark_count').addEventListener('change', (e) => {
                     this.shark.count = parseInt(e.target.value);
                 });
@@ -151,7 +204,6 @@ class classSimulation_ui {
                     this.shark.starve = parseInt(e.target.value);
                 });
 
-                // Event-Listener für Start/Restart Button
                 document.getElementById('startRestartButton').addEventListener('click', () => {
                     const config = {
                         dimensions: this.dimensions,
@@ -170,35 +222,131 @@ class classSimulation_ui {
                         meine_szene.registerUpdateObject(window.SIMULATION);
                     }
                 });
-            },
-            onclose: () => {
-                // Hide instead of destroying
-                this.WatorBox.hide();
-            },
+
+                // Settings buttons event listeners
+                document.getElementById('saveWatorSettingsBtn').addEventListener('click', () => this.saveSettings());
+                document.getElementById('loadWatorSettingsBtn').addEventListener('click', () => this.loadSettings());
+            }
         });
 
         return this.WatorBox;
     }
 
+    saveSettings() {
+        const settings = {
+            dimensions: this.dimensions,
+            world_edge: this.world_edge,
+            neighbors: this.neighbors,
+            fish: this.fish,
+            shark: this.shark
+        };
+
+        const blob = new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'wator-settings.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    loadSettings() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        input.onchange = (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const settings = JSON.parse(e.target.result);
+                        this.applySettings(settings);
+                        this.updateSettingsUI();
+                    } catch (error) {
+                        console.error('Error parsing settings file:', error);
+                    }
+                };
+                reader.readAsText(file);
+            }
+        };
+        input.click();
+    }
+
+    applySettings(settings) {
+        if (settings.dimensions) {
+            this.dimensions = settings.dimensions;
+        }
+        if (settings.world_edge) {
+            this.world_edge = settings.world_edge;
+        }
+        if (settings.neighbors) {
+            this.neighbors = settings.neighbors;
+        }
+        if (settings.fish) {
+            this.fish = settings.fish;
+        }
+        if (settings.shark) {
+            this.shark = settings.shark;
+        }
+    }
+
+    updateSettingsUI() {
+        // Update dimension button
+        const dimensionButton = document.getElementById('dimensionButton');
+        if (dimensionButton) {
+            dimensionButton.textContent = `X:${this.dimensions.x}, Y:${this.dimensions.y}, Z:${this.dimensions.z}`;
+        }
+
+        // Update world edge
+        const worldEdgeSelect = document.getElementById('world_edge');
+        if (worldEdgeSelect) {
+            worldEdgeSelect.value = this.world_edge;
+        }
+
+        // Update neighbors
+        const neighborSides = document.getElementById('neighbor-sides');
+        const neighborEdges = document.getElementById('neighbor-edges');
+        const neighborCorners = document.getElementById('neighbor-corners');
+        if (neighborSides) neighborSides.checked = this.neighbors.sides;
+        if (neighborEdges) neighborEdges.checked = this.neighbors.edges;
+        if (neighborCorners) neighborCorners.checked = this.neighbors.corners;
+
+        // Update fish settings
+        const fishCount = document.getElementById('fish_count');
+        const fishBirth = document.getElementById('fish_birth');
+        if (fishCount) fishCount.value = this.fish.count;
+        if (fishBirth) fishBirth.value = this.fish.birth;
+
+        // Update shark settings
+        const sharkCount = document.getElementById('shark_count');
+        const sharkBirth = document.getElementById('shark_birth');
+        const sharkStarve = document.getElementById('shark_starve');
+        if (sharkCount) sharkCount.value = this.shark.count;
+        if (sharkBirth) sharkBirth.value = this.shark.birth;
+        if (sharkStarve) sharkStarve.value = this.shark.starve;
+    }
+
     centerWatorBox() {
         if (this.WatorBox && !this.WatorBox.min) {
-            this.WatorBox.move('center', 'center');
+            this.WatorBox.move('0', '0');
         }
     }
 
     openDimensionWindow() {
-      // Hier einbauen mam_dim = 1000;  
       const htmlContent = `
             <form>
                 <fieldset><legend>X Y Z</legend>
-                <label style="display: block;">X: <input type="number" id="x_value_input" value="${this.dimensions.x}" min="0" max="10000"></label>
-                    <input type="range" id="x_slider" min="0" max="10000" step="100" value="${this.dimensions.x}"><br>
-                    <label style="display: block;">Y: <input type="number" id="y_value_input" value="${this.dimensions.y}" min="0" max="10000"></label>
-                    <input type="range" id="y_slider" min="0" max="10000" step="100" value="${this.dimensions.y}"><br>
-                    <label style="display: block;">Z: <input type="number" id="z_value_input" value="${this.dimensions.z}" min="0" max="10000"></label>
-                    <input type="range" id="z_slider" min="0" max="10000" step="100" value="${this.dimensions.z}"><br><br>
-                    <label style="display: block;">Alle: <input type="number" id="all_value_input" value="${this.dimensions.x === this.dimensions.y && this.dimensions.y === this.dimensions.z ? this.dimensions.x : ''}" min="0" max="10000"></label>
-                    <input type="range" id="all_slider" min="0" max="10000" step="100" value="${this.dimensions.x}"><br>
+                <label style="display: block;">X: <input type="number" id="x_value_input" value="${this.dimensions.x}" min="1" max="1000"></label>
+                    <input type="range" id="x_slider" min="1" max="1000" step="1" value="${this.dimensions.x}"><br>
+                    <label style="display: block;">Y: <input type="number" id="y_value_input" value="${this.dimensions.y}" min="1" max="1000"></label>
+                    <input type="range" id="y_slider" min="1" max="1000" step="1" value="${this.dimensions.y}"><br>
+                    <label style="display: block;">Z: <input type="number" id="z_value_input" value="${this.dimensions.z}" min="1" max="1000"></label>
+                    <input type="range" id="z_slider" min="1" max="1000" step="1" value="${this.dimensions.z}"><br><br>
+                    <label style="display: block;">Alle: <input type="number" id="all_value_input" value="${this.dimensions.x === this.dimensions.y && this.dimensions.y === this.dimensions.z ? this.dimensions.x : ''}" min="1" max="1000"></label>
+                    <input type="range" id="all_slider" min="1" max="1000" step="1" value="${this.dimensions.x}"><br>
                 </fieldset>
                 <fieldset><legend>action</legend>
                     <div style="text-align: center;">
@@ -225,6 +373,23 @@ class classSimulation_ui {
                 class: ['no-max', 'no-full', 'no-min'],
                 modal: true,
                 oncreate: () => {
+                    // Add custom close button to the title bar after WinBox is fully created
+                    setTimeout(() => {
+                        if (this.dimensionWindow && this.dimensionWindow.dom) {
+                            const titleBar = this.dimensionWindow.dom.querySelector('.wb-title');
+                            if (titleBar) {
+                                const closeBtn = document.createElement('span');
+                                closeBtn.innerHTML = '×';
+                                closeBtn.className = 'custom-close-btn';
+                                closeBtn.style.cssText = 'position: absolute; right: 10px; top: 0; cursor: pointer; font-size: 20px;';
+                                closeBtn.addEventListener('click', () => {
+                                    this.dimensionWindow.hide();
+                                });
+                                titleBar.appendChild(closeBtn);
+                            }
+                        }
+                    }, 100);
+                    
                     document.getElementById('x_slider').addEventListener('input', (event) => {
                         this.dimensions.x = parseInt(event.target.value);
                         document.getElementById('x_value_input').value = this.dimensions.x;
@@ -280,11 +445,7 @@ class classSimulation_ui {
                             alert(error.message);
                         }
                     });
-                },
-                onclose: () => {
-                    // Hide instead of destroying
-                    this.dimensionWindow.hide();
-                },
+                }
             });
         } else {
             // Update content if window already exists
@@ -381,6 +542,7 @@ class classSimulation_ui {
         if (this.WatorBox) {
             if (this.WatorBox.hidden) {
                 this.WatorBox.show();
+                this.WatorBox.focus();
             } else {
                 this.WatorBox.hide();
             }

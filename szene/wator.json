@@ -1,0 +1,34 @@
+{
+  "fog": {
+    "enabled": true,
+    "color": "#12193b",
+    "near": -107,
+    "far": 345
+  },
+  "shadows": {
+    "enabled": true,
+    "quality": 1536
+  },
+  "helperGrid": {
+    "visible": false
+  },
+  "ground": {
+    "visible": true,
+    "textureType": "seabed"
+  },
+  "timeSlice": {
+    "value": 95
+  },
+  "camera": {
+    "position": {
+      "x": 125.68913136804653,
+      "y": 53.73578892558779,
+      "z": 47.67864801576246
+    },
+    "target": {
+      "x": 53.88843344425862,
+      "y": 0.6716188288480491,
+      "z": 49.951400353937316
+    }
+  }
+}

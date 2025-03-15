@@ -6,7 +6,7 @@ class classSprache {
         // Create the window immediately but hide it
         this.createSpracheWindow();
         this.spracheWindow.hide();
-        
+         
         // Registriere ein Objekt mit der MENU_Klick Methode
         MENU.register_to_MENU({
             MENU_Name: this.titel,
@@ -23,11 +23,28 @@ class classSprache {
             width: 230,
             height: 100,
             html: htmlContent,
-            class: ["no-max", "no-full", "no-close"],
+            class: ["no-max", "no-full", "no-close", "no-min"],
             x: "center",
             y: "center",
             // min: true, // Fenster wird minimiert gestartet
             oncreate: () => {
+                // Add custom close button to the title bar after WinBox is fully created
+                setTimeout(() => {
+                    if (this.spracheWindow && this.spracheWindow.dom) {
+                        const titleBar = this.spracheWindow.dom.querySelector('.wb-title');
+                        if (titleBar) {
+                            const closeBtn = document.createElement('span');
+                            closeBtn.innerHTML = '×';
+                            closeBtn.className = 'custom-close-btn';
+                            closeBtn.style.cssText = 'position: absolute; right: 10px; top: 0; cursor: pointer; font-size: 20px;';
+                            closeBtn.addEventListener('click', () => {
+                                this.spracheWindow.hide();
+                            });
+                            titleBar.appendChild(closeBtn);
+                        }
+                    }
+                }, 100);
+                
                 // Lade das Google Translate Skript nach Erstellung des Fensters
                 const script1 = document.createElement('script');
                 script1.innerHTML = `
@@ -44,7 +61,7 @@ class classSprache {
             },
             onclose: () => {
                 // Hide instead of destroying
-                this.spracheWindow.hide();
+                // this.spracheWindow.hide();
             }
         });
     }
@@ -53,6 +70,7 @@ class classSprache {
         if (this.spracheWindow) {
             if (this.spracheWindow.hidden) {
                 this.spracheWindow.show();
+                this.spracheWindow.focus();
             } else {
                 this.spracheWindow.hide();
             }

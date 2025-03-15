@@ -1,288 +1,412 @@
+// classSimulation.js
 class classSimulation {
-  constructor(settings) {
-    this.settings = settings;
-    
-    // Listen für Fische und Haie
-    this.fishList = [];
-    this.sharkList = [];
-    
-    // Nachbarschafts-Offsets basierend auf den UI-Einstellungen
-    this.neighborOffsets = this.generateNeighborOffsets(settings.neighbors);
-    
-    // Zeitsteuerung für Simulationsschritte
-    this.lastUpdateTime = Date.now();
-    this.updateInterval = 10; // 1 Schritt pro Sekunde
-    this.frameSkip = 0; // No frame skipping by default
-    this.frameCounter = 0; // Counter for frame skipping
-    
-    // Initiale Platzierung der Kreaturen
-    this.placeInitialCreatures();
-  }
+    constructor(settings) {
+        this.settings = settings;
+        
+        // Lists for fish and sharks
+        this.fishList = [];
+        this.sharkList = [];
+        
+        // Neighborhood offsets based on UI settings
+        this.neighborOffsets = classWesen.generateNeighborOffsets(settings.neighbors);
+        
+        // Setup rendering
+        this.setupInstancedMeshes();
+        this.placeInitialCreatures();
+        
+        // Setup raycaster for mouse interaction
+        this.raycaster = new THREE.Raycaster();
+        
+        // Add mouse move listener
+        window.addEventListener('mousemove', (event) => {
+            classWesen.onMouseMove(event, this);
+        });
 
-  /** Generiere Nachbarschafts-Offsets basierend auf den Einstellungen */
-  generateNeighborOffsets(neighbors) {
-    const offsets = [];
-    if (neighbors.sides) {
-      // Seiten-Nachbarn (6 Richtungen)
-      offsets.push([-1, 0, 0], [1, 0, 0], [0, -1, 0], [0, 1, 0], [0, 0, -1], [0, 0, 1]);
-    }
-    if (neighbors.edges) {
-      // Kanten-Nachbarn (12 diagonale Richtungen in 2D)
-      offsets.push([-1, -1, 0], [-1, 1, 0], [1, -1, 0], [1, 1, 0],
-                   [-1, 0, -1], [-1, 0, 1], [1, 0, -1], [1, 0, 1],
-                   [0, -1, -1], [0, -1, 1], [0, 1, -1], [0, 1, 1]);
-    }
-    if (neighbors.corners) {
-      // Ecken-Nachbarn (8 diagonale Richtungen in 3D)
-      offsets.push([-1, -1, -1], [-1, -1, 1], [-1, 1, -1], [-1, 1, 1],
-                   [1, -1, -1], [1, -1, 1], [1, 1, -1], [1, 1, 1]);
-    }
-    return offsets;
-  }
+        // Initialize matrix for transformations
+        this.matrix = new THREE.Matrix4();
+        
+        // Debug counter
+        this.stepCounter = 0;
 
-  /** Platzieren der initialen Fische und Haie */
-  placeInitialCreatures() {
-    const { fish, shark } = this.settings;
-
-    // Fische platzieren
-    for (let i = 0; i < fish.count; i++) {
-      const pos = this.findRandomEmptyPosition();
-      if (pos) {
-        const newFish = new Fish(pos, fish.birth);
-        this.fishList.push(newFish);
-        newFish.mesh = this.createFishMesh(pos);
-        meine_szene.scene.add(newFish.mesh);
-      }
+        // Time-slicing parameters
+        this.timeSlice = 8; // Maximum time (ms) to process before yielding
+        this.currentFishIndex = 0;
+        this.currentSharkIndex = 0;
+        this.processingFish = true; // true = processing fish, false = processing sharks
+        this.stepInProgress = false;
+        
+        // Temporary storage for step results
+        this.newFish = [];
+        this.newSharks = [];
+        this.deadFish = new Set();
+        this.deadSharks = new Set();
     }
 
-    // Haie platzieren
-    for (let i = 0; i < shark.count; i++) {
-      const pos = this.findRandomEmptyPosition();
-      if (pos) {
-        const newShark = new Shark(pos, shark.birth, shark.starve);
-        this.sharkList.push(newShark);
-        newShark.mesh = this.createSharkMesh(pos);
-        meine_szene.scene.add(newShark.mesh);
-      }
+    setupInstancedMeshes() {
+        this.boxGeometry = new THREE.BoxGeometry(0.9, 0.9, 0.9);
+        this.fishMaterial = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+        this.sharkMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+        
+        const maxInstances = this.settings.dimensions.x * this.settings.dimensions.y * this.settings.dimensions.z;
+        
+        this.fishInstancedMesh = new THREE.InstancedMesh(
+            this.boxGeometry,
+            this.fishMaterial,
+            maxInstances
+        );
+        this.fishInstancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        this.fishInstancedMesh.count = 0;
+        
+        if (meine_szene && meine_szene.shadowsEnabled) {
+            this.fishInstancedMesh.castShadow = true;
+            this.fishInstancedMesh.receiveShadow = true;
+        }
+        
+        meine_szene.scene.add(this.fishInstancedMesh);
+        
+        this.sharkInstancedMesh = new THREE.InstancedMesh(
+            this.boxGeometry,
+            this.sharkMaterial,
+            maxInstances
+        );
+        this.sharkInstancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        this.sharkInstancedMesh.count = 0;
+        
+        if (meine_szene && meine_szene.shadowsEnabled) {
+            this.sharkInstancedMesh.castShadow = true;
+            this.sharkInstancedMesh.receiveShadow = true;
+        }
+        
+        meine_szene.scene.add(this.sharkInstancedMesh);
+        
+        this.matrix = new THREE.Matrix4();
     }
-  }
 
-  /** Suche nach einer zufälligen, leeren Position */
-  findRandomEmptyPosition() {
-    const { x, y, z } = this.settings.dimensions;
-    for (let attempts = 0; attempts < 1000; attempts++) {
-      const pos = {
-        x: Math.floor(Math.random() * x),
-        y: Math.floor(Math.random() * y),
-        z: Math.floor(Math.random() * z)
-      };
-      if (!this.isPositionOccupied(pos)) {
+    placeInitialCreatures() {
+        const { fish, shark } = this.settings;
+
+        // Place fish
+        for (let i = 0; i < fish.count; i++) {
+            const pos = classWesen.findRandomEmptyPosition(this.settings, this.fishList, this.sharkList);
+            if (pos) {
+                const newFish = new classFisch(pos, fish.birth);
+                newFish.setInstanceId(this.fishList.length);
+                this.fishList.push(newFish);
+                this.updateFishInstance(newFish);
+            }
+        }
+
+        // Place sharks
+        for (let i = 0; i < shark.count; i++) {
+            const pos = classWesen.findRandomEmptyPosition(this.settings, this.fishList, this.sharkList);
+            if (pos) {
+                const newShark = new classHai(pos, shark.birth, shark.starve);
+                newShark.setInstanceId(this.sharkList.length);
+                this.sharkList.push(newShark);
+                this.updateSharkInstance(newShark);
+            }
+        }
+        
+        this.fishInstancedMesh.count = this.fishList.length;
+        this.sharkInstancedMesh.count = this.sharkList.length;
+    }
+
+    async performSimulationStep() {
+        if (this.stepInProgress) {
+            return; // Don't start a new step if one is in progress
+        }
+
+        this.stepInProgress = true;
+        this.processingFish = true;
+        this.currentFishIndex = 0;
+        this.currentSharkIndex = 0;
+        this.newFish = [];
+        this.newSharks = [];
+        this.deadFish = new Set();
+        this.deadSharks = new Set();
+
+        // Start the time-sliced processing
+        await this.processTimeSlice();
+    }
+
+    async processTimeSlice() {
+        const startTime = performance.now();
+        
+        if (this.processingFish) {
+            // Process fish in chunks
+            while (this.currentFishIndex < this.fishList.length) {
+                const fish = this.fishList[this.currentFishIndex];
+                if (!this.deadFish.has(fish)) {
+                    this.processFish(fish);
+                }
+                
+                this.currentFishIndex++;
+                
+                if (performance.now() - startTime > this.timeSlice) {
+                    // Update matrices for processed fish
+                    this.updateFishAndSharkMatrices();
+                    // Continue in next frame
+                    requestAnimationFrame(() => this.processTimeSlice());
+                    return;
+                }
+            }
+            
+            // Finished processing fish, switch to sharks
+            this.processingFish = false;
+            this.updateFishAndSharkMatrices();
+            requestAnimationFrame(() => this.processTimeSlice());
+            return;
+        }
+        
+        // Process sharks in chunks
+        while (this.currentSharkIndex < this.sharkList.length) {
+            const shark = this.sharkList[this.currentSharkIndex];
+            if (!this.deadSharks.has(shark)) {
+                this.processShark(shark);
+            }
+            
+            this.currentSharkIndex++;
+            
+            if (performance.now() - startTime > this.timeSlice) {
+                // Update matrices for processed sharks
+                this.updateFishAndSharkMatrices();
+                // Continue in next frame
+                requestAnimationFrame(() => this.processTimeSlice());
+                return;
+            }
+        }
+        
+        // All processing complete, finalize step
+        this.finalizeStep();
+    }
+
+    processFish(fish) {
+        fish.incrementAge();
+        
+        // 1. Choose a random neighbor offset
+        const randomIndex = Math.floor(Math.random() * this.neighborOffsets.length);
+        const offset = this.neighborOffsets[randomIndex];
+        
+        // 2. Calculate target position
+        const targetPos = {
+            x: fish.pos.x + offset[0],
+            y: fish.pos.y + offset[1],
+            z: fish.pos.z + offset[2]
+        };
+        
+        // 3. Normalize position if needed
+        const normalizedPos = this.normalizePosition(targetPos);
+        
+        // 4. Check if position is valid and empty
+        if (classWesen.isValidPosition(normalizedPos, this.settings.dimensions) &&
+            !classWesen.isPositionOccupied(normalizedPos, this.fishList, this.sharkList)) {
+            
+            // Move fish
+            const oldPos = fish.getPosition();
+            fish.setPosition(normalizedPos);
+            
+            // Check reproduction
+            if (fish.canReproduce()) {
+                fish.resetAge();
+                const babyFish = new classFisch(oldPos, fish.birthTime);
+                babyFish.setInstanceId(this.fishList.length + this.newFish.length);
+                this.newFish.push(babyFish);
+            }
+        }
+    }
+
+    processShark(shark) {
+        shark.incrementAge();
+        shark.incrementStarveTimer();
+        
+        if (shark.isStarving()) {
+            this.deadSharks.add(shark);
+            return;
+        }
+        
+        const fishNeighbors = this.getFishNeighbors(shark.pos);
+        
+        if (fishNeighbors.length > 0) {
+            // Eat a random neighboring fish
+            const targetPos = fishNeighbors[Math.floor(Math.random() * fishNeighbors.length)];
+            const eatenFish = this.fishList.find(f => f.isSamePosition(f.pos, targetPos));
+            
+            if (eatenFish) {
+                this.deadFish.add(eatenFish);
+                const oldPos = shark.getPosition();
+                shark.setPosition(targetPos);
+                shark.resetStarveTimer();
+                
+                // Check reproduction
+                if (shark.canReproduce()) {
+                    shark.resetAge();
+                    const emptyNeighbors = this.getEmptyNeighbors(shark.pos);
+                    if (emptyNeighbors.length > 0) {
+                        const babyPos = emptyNeighbors[Math.floor(Math.random() * emptyNeighbors.length)];
+                        const babyShark = new classHai(babyPos, shark.birthTime, shark.starveTime);
+                        babyShark.setInstanceId(this.sharkList.length + this.newSharks.length);
+                        this.newSharks.push(babyShark);
+                    }
+                }
+            }
+        } else {
+            // No fish nearby, try to move to an empty cell
+            const emptyNeighbors = this.getEmptyNeighbors(shark.pos);
+            if (emptyNeighbors.length > 0) {
+                const newPos = emptyNeighbors[Math.floor(Math.random() * emptyNeighbors.length)];
+                const oldPos = shark.getPosition();
+                shark.setPosition(newPos);
+                
+                // Check reproduction
+                if (shark.canReproduce()) {
+                    shark.resetAge();
+                    const birthNeighbors = this.getEmptyNeighbors(shark.pos);
+                    if (birthNeighbors.length > 0) {
+                        const babyPos = birthNeighbors[Math.floor(Math.random() * birthNeighbors.length)];
+                        const babyShark = new classHai(babyPos, shark.birthTime, shark.starveTime);
+                        babyShark.setInstanceId(this.sharkList.length + this.newSharks.length);
+                        this.newSharks.push(babyShark);
+                    }
+                }
+            }
+        }
+    }
+
+    finalizeStep() {
+        // Update lists and instance counts
+        this.fishList = this.fishList.filter(fish => !this.deadFish.has(fish));
+        this.sharkList = this.sharkList.filter(shark => !this.deadSharks.has(shark));
+        
+        // Add new creatures
+        this.fishList.push(...this.newFish);
+        this.sharkList.push(...this.newSharks);
+        
+        // Update instance IDs
+        this.fishList.forEach((fish, index) => fish.setInstanceId(index));
+        this.sharkList.forEach((shark, index) => shark.setInstanceId(index));
+        
+        // Update instance counts
+        this.fishInstancedMesh.count = this.fishList.length;
+        this.sharkInstancedMesh.count = this.sharkList.length;
+        
+        // Update all instances
+        this.updateFishAndSharkMatrices();
+        
+        // Reset temporary storage
+        this.newFish = [];
+        this.newSharks = [];
+        this.deadFish = new Set();
+        this.deadSharks = new Set();
+        
+        // Step complete
+        this.stepCounter++;
+        this.stepInProgress = false;
+
+        // Update statistics
+        if (window.STATISTIK) {
+            window.STATISTIK.updateStatistics(
+                this.stepCounter,
+                this.fishList.length,
+                this.sharkList.length
+            );
+        }
+    }
+
+    updateFishInstance(fish) {
+        const instanceId = fish.getInstanceId();
+        if (instanceId >= 0) {
+            this.matrix.setPosition(fish.pos.x, fish.pos.y, fish.pos.z);
+            this.fishInstancedMesh.setMatrixAt(instanceId, this.matrix);
+        }
+    }
+
+    updateSharkInstance(shark) {
+        const instanceId = shark.getInstanceId();
+        if (instanceId >= 0) {
+            this.matrix.setPosition(shark.pos.x, shark.pos.y, shark.pos.z);
+            this.sharkInstancedMesh.setMatrixAt(instanceId, this.matrix);
+        }
+    }
+
+    updateFishAndSharkMatrices() {
+        // Update fish positions
+        for (let i = 0; i < this.fishList.length; i++) {
+            this.updateFishInstance(this.fishList[i]);
+        }
+        this.fishInstancedMesh.instanceMatrix.needsUpdate = true;
+
+        // Update shark positions
+        for (let i = 0; i < this.sharkList.length; i++) {
+            this.updateSharkInstance(this.sharkList[i]);
+        }
+        this.sharkInstancedMesh.instanceMatrix.needsUpdate = true;
+    }
+
+    getEmptyNeighbors(pos) {
+        const neighbors = [];
+        for (const offset of this.neighborOffsets) {
+            const neighborPos = {
+                x: pos.x + offset[0],
+                y: pos.y + offset[1],
+                z: pos.z + offset[2]
+            };
+            
+            const normalizedPos = this.normalizePosition(neighborPos);
+            
+            if (!classWesen.isValidPosition(normalizedPos, this.settings.dimensions)) {
+                if (this.settings.world_edge !== 'verbunden') {
+                    continue;
+                }
+            }
+            
+            if (!classWesen.isPositionOccupied(normalizedPos, this.fishList, this.sharkList)) {
+                neighbors.push(normalizedPos);
+            }
+        }
+        return neighbors;
+    }
+
+    getFishNeighbors(pos) {
+        const neighbors = [];
+        for (const offset of this.neighborOffsets) {
+            const neighborPos = {
+                x: pos.x + offset[0],
+                y: pos.y + offset[1],
+                z: pos.z + offset[2]
+            };
+            
+            const normalizedPos = this.normalizePosition(neighborPos);
+            
+            if (!classWesen.isValidPosition(normalizedPos, this.settings.dimensions)) {
+                if (this.settings.world_edge !== 'verbunden') {
+                    continue;
+                }
+            }
+            
+            if (this.fishList.some(f => f.isSamePosition(f.pos, normalizedPos))) {
+                neighbors.push(normalizedPos);
+            }
+        }
+        return neighbors;
+    }
+
+    normalizePosition(pos) {
+        if (this.settings.world_edge === 'verbunden') {
+            return {
+                x: ((pos.x % this.settings.dimensions.x) + this.settings.dimensions.x) % this.settings.dimensions.x,
+                y: ((pos.y % this.settings.dimensions.y) + this.settings.dimensions.y) % this.settings.dimensions.y,
+                z: ((pos.z % this.settings.dimensions.z) + this.settings.dimensions.z) % this.settings.dimensions.z
+            };
+        }
         return pos;
-      }
     }
-    return null; // Keine leere Position gefunden
-  }
 
-  /** Überprüfe, ob eine Position besetzt ist */
-  isPositionOccupied(pos) {
-    return this.fishList.some(f => f.pos.x === pos.x && f.pos.y === pos.y && f.pos.z === pos.z) ||
-           this.sharkList.some(s => s.pos.x === pos.x && s.pos.y === pos.y && s.pos.z === pos.z);
-  }
-
-  /** Erstelle ein Mesh für einen Fisch (grüne Box) */
-  createFishMesh(pos) {
-    const geometry = new THREE.BoxGeometry(1, 1, 1);
-    const material = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.set(pos.x, pos.y, pos.z);
-    return mesh;
-  }
-
-  /** Erstelle ein Mesh für einen Hai (rote Box) */
-  createSharkMesh(pos) {
-    const geometry = new THREE.BoxGeometry(1, 1, 1);
-    const material = new THREE.MeshStandardMaterial({ color: 0xff0000 });
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.set(pos.x, pos.y, pos.z);
-    return mesh;
-  }
-
-  /** Update-Methode für die Simulation */
-  update() {
-    // Check if simulation is paused by the player
-    if (window.PLAYER && !window.PLAYER.isPlaying) {
-      return;
-    }
-    
-    const now = Date.now();
-    if (now - this.lastUpdateTime >= this.updateInterval) {
-      // Handle frame skipping for turbo mode
-      this.frameCounter++;
-      if (this.frameSkip === 0 || this.frameCounter > this.frameSkip) {
-        this.performSimulationStep();
-        this.frameCounter = 0;
-      }
-      this.lastUpdateTime = now;
-    }
-  }
-
-  /** Führe einen Simulationsschritt aus */
-  performSimulationStep() {
-    // Mische die Listen, um Bias zu vermeiden
-    this.shuffleArray(this.fishList);
-    this.shuffleArray(this.sharkList);
-
-    // Verarbeite Fische
-    for (let i = 0; i < this.fishList.length; i++) {
-      const fish = this.fishList[i];
-      const emptyNeighbors = this.getEmptyNeighbors(fish.pos);
-      if (emptyNeighbors.length > 0) {
-        const newPos = emptyNeighbors[Math.floor(Math.random() * emptyNeighbors.length)];
-        this.moveCreature(fish, newPos);
-        fish.age++;
-        if (fish.age >= fish.birthTime) {
-          fish.age = 0;
-          const oldPos = { ...fish.pos }; // Kopie der alten Position
-          if (!this.isPositionOccupied(oldPos)) {
-            const newFish = new Fish(oldPos, fish.birthTime);
-            this.fishList.push(newFish);
-            newFish.mesh = this.createFishMesh(oldPos);
-            meine_szene.scene.add(newFish.mesh);
-          }
+    removeFromScene() {
+        if (this.fishInstancedMesh) {
+            meine_szene.scene.remove(this.fishInstancedMesh);
         }
-      } else {
-        fish.age++;
-      }
-    }
-
-    // Verarbeite Haie
-    for (let i = 0; i < this.sharkList.length; i++) {
-      const shark = this.sharkList[i];
-      const fishNeighbors = this.getFishNeighbors(shark.pos);
-      if (fishNeighbors.length > 0) {
-        const targetPos = fishNeighbors[Math.floor(Math.random() * fishNeighbors.length)];
-        const eatenFish = this.fishList.find(f => f.pos.x === targetPos.x && f.pos.y === targetPos.y && f.pos.z === targetPos.z);
-        this.fishList = this.fishList.filter(f => f !== eatenFish);
-        meine_szene.scene.remove(eatenFish.mesh);
-        this.moveCreature(shark, targetPos);
-        shark.starveTimer = 0;
-      } else {
-        const emptyNeighbors = this.getEmptyNeighbors(shark.pos);
-        if (emptyNeighbors.length > 0) {
-          const newPos = emptyNeighbors[Math.floor(Math.random() * emptyNeighbors.length)];
-          this.moveCreature(shark, newPos);
+        if (this.sharkInstancedMesh) {
+            meine_szene.scene.remove(this.sharkInstancedMesh);
         }
-      }
-      shark.age++;
-      shark.starveTimer++;
-      if (shark.age >= shark.birthTime) {
-        shark.age = 0;
-        const oldPos = { ...shark.pos }; // Kopie der alten Position
-        if (!this.isPositionOccupied(oldPos)) {
-          const newShark = new Shark(oldPos, shark.birthTime, shark.starveTime);
-          this.sharkList.push(newShark);
-          newShark.mesh = this.createSharkMesh(oldPos);
-          meine_szene.scene.add(newShark.mesh);
-        }
-      }
-      if (shark.starveTimer >= shark.starveTime) {
-        this.sharkList = this.sharkList.filter(s => s !== shark);
-        meine_szene.scene.remove(shark.mesh);
-      }
     }
-  }
-
-  /** Bewege eine Kreatur zu einer neuen Position */
-  moveCreature(creature, newPos) {
-    creature.pos = newPos;
-    creature.mesh.position.set(newPos.x, newPos.y, newPos.z);
-  }
-
-  /** Finde leere Nachbarpositionen */
-  getEmptyNeighbors(pos) {
-    const neighbors = [];
-    for (const offset of this.neighborOffsets) {
-      let nx = pos.x + offset[0];
-      let ny = pos.y + offset[1];
-      let nz = pos.z + offset[2];
-      let wrapped = false;
-      if (this.settings.world_edge === 'verbunden') {
-        nx = (nx + this.settings.dimensions.x) % this.settings.dimensions.x;
-        ny = (ny + this.settings.dimensions.y) % this.settings.dimensions.y;
-        nz = (nz + this.settings.dimensions.z) % this.settings.dimensions.z;
-        wrapped = true;
-      }
-      if (wrapped || (nx >= 0 && nx < this.settings.dimensions.x &&
-                      ny >= 0 && ny < this.settings.dimensions.y &&
-                      nz >= 0 && nz < this.settings.dimensions.z)) {
-        const neighborPos = { x: nx, y: ny, z: nz };
-        if (!this.isPositionOccupied(neighborPos)) {
-          neighbors.push(neighborPos);
-        }
-      }
-    }
-    return neighbors;
-  }
-
-  /** Finde Nachbarpositionen mit Fischen */
-  getFishNeighbors(pos) {
-    const neighbors = [];
-    for (const offset of this.neighborOffsets) {
-      let nx = pos.x + offset[0];
-      let ny = pos.y + offset[1];
-      let nz = pos.z + offset[2];
-      let wrapped = false;
-      if (this.settings.world_edge === 'verbunden') {
-        nx = (nx + this.settings.dimensions.x) % this.settings.dimensions.x;
-        ny = (ny + this.settings.dimensions.y) % this.settings.dimensions.y;
-        nz = (nz + this.settings.dimensions.z) % this.settings.dimensions.z;
-        wrapped = true;
-      }
-      if (wrapped || (nx >= 0 && nx < this.settings.dimensions.x &&
-                      ny >= 0 && ny < this.settings.dimensions.y &&
-                      nz >= 0 && nz < this.settings.dimensions.z)) {
-        const neighborPos = { x: nx, y: ny, z: nz };
-        if (this.fishList.some(f => f.pos.x === neighborPos.x && f.pos.y === neighborPos.y && f.pos.z === neighborPos.z)) {
-          neighbors.push(neighborPos);
-        }
-      }
-    }
-    return neighbors;
-  }
-
-  /** Mische eine Liste zufällig */
-  shuffleArray(array) {
-    for (let i = array.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [array[i], array[j]] = [array[j], array[i]];
-    }
-  }
-
-  /** Entferne alle Meshes aus der Szene (für Neustart) */
-  removeFromScene() {
-    this.fishList.forEach(f => meine_szene.scene.remove(f.mesh));
-    this.sharkList.forEach(s => meine_szene.scene.remove(s.mesh));
-  }
-}
-
-/** Klasse für Fische */
-class Fish {
-  constructor(pos, birthTime) {
-    this.pos = pos; // { x, y, z }
-    this.age = 0;
-    this.birthTime = birthTime;
-    this.mesh = null;
-  }
-}
-
-/** Klasse für Haie */
-class Shark {
-  constructor(pos, birthTime, starveTime) {
-    this.pos = pos; // { x, y, z }
-    this.age = 0;
-    this.starveTimer = 0;
-    this.birthTime = birthTime;
-    this.starveTime = starveTime;
-    this.mesh = null;
-  }
 }

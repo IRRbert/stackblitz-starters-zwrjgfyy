@@ -1,0 +1,19 @@
+{
+  "fog": {
+    "enabled": true,
+    "color": "#58aefd",
+    "near": 1,
+    "far": 1000
+  },
+  "shadows": {
+    "enabled": true,
+    "quality": 1024
+  },
+  "helperGrid": {
+    "visible": false
+  },
+  "ground": {
+    "visible": true,
+    "textureType": "grass"
+  }
+}

@@ -1,5 +1,6 @@
 {
   "scripts": {
+    "dev": "servor --reload",
     "start": "servor --reload"
   },
   "dependencies": {

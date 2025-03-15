@@ -17,3 +17,7 @@ Turbo 1 = 1 Bild wird ausgelassen beim Zeichnen. = 2fach
 Turbo 2 = 2 Bilder werden ausgelassen beim Zeichnen. = 3fach
 ...
 
+Schatten
+
+Player
+
